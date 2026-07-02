@@ -1,0 +1,49 @@
+@page "/"
+@inject IConfiguration Configuration
+
+<PageTitle>Dotnet Claude</PageTitle>
+
+<div class="home-hero">
+    <h1>Dotnet Claude</h1>
+    <p class="lead">
+        A .NET-native front end for the Claude API — ask questions, switch models mid-conversation,
+        and see exactly what each query cost in tokens, latency, and tool ("skill") calls.
+    </p>
+
+    <div class="home-actions">
+        <a class="btn btn-primary" href="chat">Start chatting</a>
+        <a class="btn btn-outline-secondary" href="metrics">View performance dashboard</a>
+    </div>
+
+    <div class="home-cards">
+        <div class="home-card">
+            <h3>Ask &amp; switch models</h3>
+            <p>Pick from Claude Opus 4.8, Sonnet 5, Haiku 4.5, or Fable 5 per message. The model can change mid-conversation.</p>
+        </div>
+        <div class="home-card">
+            <h3>Tool-using agent</h3>
+            <p>The assistant can call demo tools (get the time, do arithmetic) in a bounded agentic loop, and every call is logged.</p>
+        </div>
+        <div class="home-card">
+            <h3>Full query telemetry</h3>
+            <p>Input/output/cache tokens, context window usage, latency, stop reason, tool calls, and estimated cost per query.</p>
+        </div>
+    </div>
+
+    @if (string.IsNullOrWhiteSpace(_apiKeyStatus))
+    {
+        <div class="alert alert-warning mt-4" role="alert">
+            No Claude API key detected. Set the <code>ANTHROPIC_API_KEY</code> environment variable
+            (or <code>Anthropic:ApiKey</code> in configuration) before sending a message.
+        </div>
+    }
+</div>
+
+@code {
+    private string? _apiKeyStatus;
+
+    protected override void OnInitialized()
+    {
+        _apiKeyStatus = Configuration["Anthropic:ApiKey"] ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+    }
+}

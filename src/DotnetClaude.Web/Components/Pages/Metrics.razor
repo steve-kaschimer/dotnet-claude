@@ -1,0 +1,147 @@
+@page "/metrics"
+@rendermode InteractiveServer
+@using DotnetClaude.Core.Data
+@using DotnetClaude.Core.Services
+@inject ConversationService ConversationService
+
+<PageTitle>Performance · Dotnet Claude</PageTitle>
+
+<h1>Query performance</h1>
+<p class="text-muted">Token usage, latency, cost, and tool ("skill") calls across every query sent so far.</p>
+
+@if (_metrics is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (_metrics.Count == 0)
+{
+    <p>No queries yet. <a href="chat">Start a conversation</a> to see performance data here.</p>
+}
+else
+{
+    <div class="summary-cards">
+        <div class="summary-card">
+            <div class="summary-value">@_metrics.Count</div>
+            <div class="summary-label">Queries</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value">@_metrics.Sum(m => m.TotalTokens).ToString("N0")</div>
+            <div class="summary-label">Total tokens</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value">$@_metrics.Sum(m => m.EstimatedCostUsd).ToString("0.0000")</div>
+            <div class="summary-label">Estimated cost</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value">@Math.Round(_metrics.Average(m => m.TotalLatencyMs), 0)ms</div>
+            <div class="summary-label">Avg latency</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-value">@_metrics.Sum(m => m.ToolCallCount)</div>
+            <div class="summary-label">Tool calls</div>
+        </div>
+    </div>
+
+    <h2>By model</h2>
+    <div class="model-breakdown">
+        @foreach (var group in _metrics.GroupBy(m => m.ModelDisplayName).OrderByDescending(g => g.Sum(m => m.TotalTokens)))
+        {
+            var totalTokens = group.Sum(m => m.TotalTokens);
+            var maxTokens = _metrics.GroupBy(m => m.ModelDisplayName).Max(g => g.Sum(m => m.TotalTokens));
+            var widthPercent = maxTokens == 0 ? 0 : 100.0 * totalTokens / maxTokens;
+
+            <div class="model-row">
+                <div class="model-row-label">@group.Key</div>
+                <div class="model-row-bar-track">
+                    <div class="model-row-bar" style="width:@(widthPercent.ToString("0.##"))%"></div>
+                </div>
+                <div class="model-row-stats">
+                    @group.Count() queries · @totalTokens.ToString("N0") tokens · $@group.Sum(m => m.EstimatedCostUsd).ToString("0.0000")
+                </div>
+            </div>
+        }
+    </div>
+
+    <h2>Tool ("skill") usage</h2>
+    @if (GetToolStats().Count == 0)
+    {
+        <p class="text-muted">No tool calls yet.</p>
+    }
+    else
+    {
+        <table class="table table-sm">
+            <thead>
+                <tr><th>Tool</th><th>Calls</th><th>Avg latency</th><th>Errors</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in GetToolStats())
+                {
+                    <tr>
+                        <td><code>@t.Name</code></td>
+                        <td>@t.Count</td>
+                        <td>@Math.Round(t.AvgLatency, 1) ms</td>
+                        <td>@t.Errors</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h2>Query log</h2>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover query-log">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Model</th>
+                    <th>In</th>
+                    <th>Out</th>
+                    <th>Cached</th>
+                    <th>Context %</th>
+                    <th>Latency</th>
+                    <th>API calls</th>
+                    <th>Tool calls</th>
+                    <th>Stop reason</th>
+                    <th>Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var metric in _metrics)
+                {
+                    <tr>
+                        <td>@metric.CreatedAt.ToLocalTime().ToString("MM/dd HH:mm:ss")</td>
+                        <td>@metric.ModelDisplayName</td>
+                        <td>@metric.InputTokens.ToString("N0")</td>
+                        <td>@metric.OutputTokens.ToString("N0")</td>
+                        <td>@metric.CacheReadInputTokens.ToString("N0")</td>
+                        <td>@metric.ContextUtilizationPercent%</td>
+                        <td>@metric.TotalLatencyMs ms</td>
+                        <td>@metric.ApiCallCount</td>
+                        <td>@metric.ToolCallCount</td>
+                        <td><code>@metric.StopReason</code></td>
+                        <td>$@metric.EstimatedCostUsd.ToString("0.000000")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<QueryMetric>? _metrics;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _metrics = await ConversationService.GetAllMetricsAsync();
+    }
+
+    private sealed record ToolStat(string Name, int Count, double AvgLatency, int Errors);
+
+    private List<ToolStat> GetToolStats() =>
+        (_metrics ?? [])
+            .SelectMany(m => m.ToolInvocations)
+            .GroupBy(t => t.ToolName)
+            .Select(g => new ToolStat(g.Key, g.Count(), g.Average(t => t.LatencyMs), g.Count(t => t.IsError)))
+            .OrderByDescending(g => g.Count)
+            .ToList();
+}

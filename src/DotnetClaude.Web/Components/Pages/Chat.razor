@@ -1,0 +1,268 @@
+@page "/chat"
+@rendermode InteractiveServer
+@using DotnetClaude.Core.Data
+@using DotnetClaude.Core.Models
+@using DotnetClaude.Core.Services
+@inject IClaudeChatService ChatService
+@inject ConversationService ConversationService
+@implements IDisposable
+
+<PageTitle>Chat · Dotnet Claude</PageTitle>
+
+<div class="chat-layout">
+    <aside class="chat-sidebar">
+        <button class="btn btn-primary w-100 mb-3" @onclick="NewConversationAsync">+ New chat</button>
+        <div class="conversation-list">
+            @foreach (var conversation in _conversations)
+            {
+                <div class="conversation-item @(conversation.Id == _currentConversationId ? "active" : "")"
+                     @onclick="() => SelectConversationAsync(conversation.Id)">
+                    <span class="conversation-title">@conversation.Title</span>
+                    <button class="btn-icon" title="Delete" @onclick="() => DeleteConversationAsync(conversation.Id)" @onclick:stopPropagation="true">✕</button>
+                </div>
+            }
+            @if (_conversations.Count == 0)
+            {
+                <p class="text-muted small">No conversations yet.</p>
+            }
+        </div>
+    </aside>
+
+    <section class="chat-main">
+        <div class="chat-toolbar">
+            <label for="model-select" class="me-2">Model:</label>
+            <select id="model-select" class="form-select form-select-sm model-select" @bind="_selectedModelWireId" disabled="@_isSending">
+                @foreach (var model in ModelCatalog.Models)
+                {
+                    <option value="@model.WireId">@model.DisplayName</option>
+                }
+            </select>
+            <span class="model-description text-muted small">@ModelCatalog.GetByWireId(_selectedModelWireId).Description</span>
+        </div>
+
+        <div class="chat-messages" @ref="_messagesContainerRef">
+            @if (_currentConversationId is null)
+            {
+                <div class="chat-empty-state">
+                    <p>Ask a question below to start a new conversation.</p>
+                    <p class="text-muted small">Try: "What time is it in Tokyo?" or "What's (18 + 4) * 3?" to see tool calls in action.</p>
+                </div>
+            }
+            @foreach (var message in _messages)
+            {
+                <div class="chat-bubble @(message.Role == ChatRole.User ? "chat-bubble-user" : "chat-bubble-assistant")">
+                    <div class="chat-bubble-role">@(message.Role == ChatRole.User ? "You" : ModelDisplayNameOrDefault(message.ModelWireId))</div>
+                    <div class="chat-bubble-text">@message.Content</div>
+                </div>
+                @if (GetMetricFor(message) is { } metric)
+                {
+                    <div class="query-stats">
+                        <span title="Input tokens">⬇️ @metric.InputTokens in</span>
+                        <span title="Output tokens">⬆️ @metric.OutputTokens out</span>
+                        @if (metric.CacheReadInputTokens > 0)
+                        {
+                            <span title="Cache read tokens">💾 @metric.CacheReadInputTokens cached</span>
+                        }
+                        <span title="Latency">⏱ @metric.TotalLatencyMs ms</span>
+                        @if (metric.ToolCallCount > 0)
+                        {
+                            <span title="Tool calls">🔧 @metric.ToolCallCount tool call@(metric.ToolCallCount == 1 ? "" : "s")</span>
+                        }
+                        <span title="Estimated cost">💵 $@metric.EstimatedCostUsd.ToString("0.000000")</span>
+                        <span title="Context window used">📐 @metric.ContextUtilizationPercent% of context</span>
+                    </div>
+                }
+            }
+
+            @if (_isSending)
+            {
+                <div class="agent-trace">
+                    @foreach (var entry in _liveTrace)
+                    {
+                        <div class="agent-trace-entry">@entry</div>
+                    }
+                    <div class="agent-trace-entry agent-trace-pending">
+                        <span class="spinner"></span> working...
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="chat-input-row">
+            <textarea class="form-control chat-input" rows="2" placeholder="Ask Claude anything..."
+                      @bind="_input" @bind:event="oninput"
+                      @onkeydown="HandleKeyDownAsync" disabled="@_isSending"></textarea>
+            <button class="btn btn-primary chat-send" @onclick="SendAsync" disabled="@(_isSending || string.IsNullOrWhiteSpace(_input))">
+                @(_isSending ? "Sending..." : "Send")
+            </button>
+        </div>
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger mt-2">@_errorMessage</div>
+        }
+    </section>
+</div>
+
+@code {
+    private List<Conversation> _conversations = [];
+    private List<ChatMessageEntity> _messages = [];
+    private List<QueryMetric> _metrics = [];
+    private int? _currentConversationId;
+    private string _selectedModelWireId = ModelCatalog.Default.WireId;
+    private string _input = "";
+    private bool _isSending;
+    private readonly List<string> _liveTrace = [];
+    private string? _errorMessage;
+    private CancellationTokenSource? _cts;
+    private Microsoft.AspNetCore.Components.ElementReference _messagesContainerRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConversationsAsync();
+    }
+
+    private async Task LoadConversationsAsync()
+    {
+        _conversations = await ConversationService.GetConversationsAsync();
+    }
+
+    private async Task SelectConversationAsync(int conversationId)
+    {
+        if (_isSending)
+        {
+            return;
+        }
+        _currentConversationId = conversationId;
+        await ReloadCurrentConversationAsync();
+    }
+
+    private async Task NewConversationAsync()
+    {
+        if (_isSending)
+        {
+            return;
+        }
+        _currentConversationId = null;
+        _messages = [];
+        _metrics = [];
+        _errorMessage = null;
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task DeleteConversationAsync(int conversationId)
+    {
+        await ConversationService.DeleteConversationAsync(conversationId);
+        if (_currentConversationId == conversationId)
+        {
+            _currentConversationId = null;
+            _messages = [];
+            _metrics = [];
+        }
+        await LoadConversationsAsync();
+    }
+
+    private async Task ReloadCurrentConversationAsync()
+    {
+        if (_currentConversationId is int id)
+        {
+            _messages = await ConversationService.GetMessagesAsync(id);
+            _metrics = await ConversationService.GetMetricsForConversationAsync(id);
+        }
+    }
+
+    private async Task HandleKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e is { Key: "Enter", ShiftKey: false })
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_input) || _isSending)
+        {
+            return;
+        }
+
+        _errorMessage = null;
+
+        if (_currentConversationId is null)
+        {
+            var conversation = await ConversationService.CreateConversationAsync(BuildTitle(_input));
+            _currentConversationId = conversation.Id;
+            await LoadConversationsAsync();
+        }
+
+        var userText = _input.Trim();
+        _input = "";
+        _isSending = true;
+        _liveTrace.Clear();
+        StateHasChanged();
+
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var step in ChatService.SendMessageAsync(_currentConversationId.Value, userText, _selectedModelWireId, _cts.Token))
+            {
+                AppendTraceEntry(step);
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // user navigated away or cancelled; nothing to report
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Something went wrong: {ex.Message}";
+        }
+        finally
+        {
+            _isSending = false;
+            _liveTrace.Clear();
+            await ReloadCurrentConversationAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void AppendTraceEntry(AgentStep step)
+    {
+        var text = step switch
+        {
+            AgentStep.ApiCallStarted s => $"Calling {ModelCatalog.GetByWireId(_selectedModelWireId).DisplayName}… (round {s.Iteration + 1})",
+            AgentStep.ToolCallStarted s => $"🔧 Calling tool ‘{s.ToolName}’ with {s.InputJson}",
+            AgentStep.ToolCallCompleted s => $"{(s.IsError ? "⚠️" : "✅")} ‘{s.ToolName}’ → {s.OutputText} ({s.LatencyMs} ms)",
+            AgentStep.AssistantText s => $"💬 {Truncate(s.Text, 200)}",
+            AgentStep.Completed => "Done.",
+            AgentStep.Failed s => $"❌ {s.Message}",
+            _ => step.ToString() ?? "",
+        };
+        _liveTrace.Add(text);
+    }
+
+    private static string Truncate(string text, int maxLength) =>
+        text.Length <= maxLength ? text : text[..maxLength] + "…";
+
+    private static string BuildTitle(string firstMessage)
+    {
+        var trimmed = firstMessage.Trim();
+        return trimmed.Length <= 60 ? trimmed : trimmed[..60] + "…";
+    }
+
+    private static string ModelDisplayNameOrDefault(string? wireId) =>
+        wireId is null ? "Claude" : ModelCatalog.GetByWireId(wireId).DisplayName;
+
+    private QueryMetric? GetMetricFor(ChatMessageEntity message) =>
+        message.Role == ChatRole.Assistant
+            ? _metrics.FirstOrDefault(m => m.AssistantMessageId == message.Id)
+            : null;
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

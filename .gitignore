@@ -1,0 +1,25 @@
+## .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+
+## SQLite runtime database (created on first run)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+## Rider / VS / VS Code
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.DotSettings.user
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## User secrets / local overrides
+appsettings.*.local.json

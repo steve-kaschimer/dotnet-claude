@@ -230,6 +230,14 @@
 
     private void AppendTraceEntry(AgentStep step)
     {
+        if (step is AgentStep.Failed failed)
+        {
+            // Surfaced as a persistent banner (see SendAsync's finally block) rather than
+            // just a trace line, since the live trace is cleared once sending finishes.
+            _errorMessage = failed.Message;
+            return;
+        }
+
         var text = step switch
         {
             AgentStep.ApiCallStarted s => $"Calling {ModelCatalog.GetByWireId(_selectedModelWireId).DisplayName}… (round {s.Iteration + 1})",
@@ -237,7 +245,6 @@
             AgentStep.ToolCallCompleted s => $"{(s.IsError ? "⚠️" : "✅")} ‘{s.ToolName}’ → {s.OutputText} ({s.LatencyMs} ms)",
             AgentStep.AssistantText s => $"💬 {Truncate(s.Text, 200)}",
             AgentStep.Completed => "Done.",
-            AgentStep.Failed s => $"❌ {s.Message}",
             _ => step.ToString() ?? "",
         };
         _liveTrace.Add(text);

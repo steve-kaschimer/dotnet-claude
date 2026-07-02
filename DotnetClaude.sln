@@ -13,6 +13,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{63F50A5F
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotnetClaude.Core.Tests", "tests\DotnetClaude.Core.Tests\DotnetClaude.Core.Tests.csproj", "{5D619A16-6255-4835-830F-1FD4183E34A0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotnetClaude.Tui", "src\DotnetClaude.Tui\DotnetClaude.Tui.csproj", "{E30B4B13-CF42-4F7B-8B1D-C11C3DF92CEE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -34,10 +36,15 @@ Global
 		{5D619A16-6255-4835-830F-1FD4183E34A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5D619A16-6255-4835-830F-1FD4183E34A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5D619A16-6255-4835-830F-1FD4183E34A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E30B4B13-CF42-4F7B-8B1D-C11C3DF92CEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E30B4B13-CF42-4F7B-8B1D-C11C3DF92CEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E30B4B13-CF42-4F7B-8B1D-C11C3DF92CEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E30B4B13-CF42-4F7B-8B1D-C11C3DF92CEE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{9895E52D-70BE-4F77-92A2-B5D91082FA02} = {BD8FDAB0-0346-42DB-9D63-682CA6FAEFBF}
 		{5ED0FDAA-EDF7-495A-8C7A-2A95B431765C} = {BD8FDAB0-0346-42DB-9D63-682CA6FAEFBF}
 		{5D619A16-6255-4835-830F-1FD4183E34A0} = {63F50A5F-D147-405A-ACE2-EC28FD34D48F}
+		{E30B4B13-CF42-4F7B-8B1D-C11C3DF92CEE} = {BD8FDAB0-0346-42DB-9D63-682CA6FAEFBF}
 	EndGlobalSection
 EndGlobal
